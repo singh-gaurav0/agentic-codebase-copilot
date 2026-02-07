@@ -11,16 +11,36 @@ const openai = new OpenAI({
 
 const EMBEDDING_MODEL = "text-embedding-3-small"
 const BATCH_SIZE = 50
+const MAX_INPUT_LENGTH = 8000 // safety guard
 
 export async function generateEmbeddings(
   texts: string[]
 ): Promise<number[][]> {
-  if (!texts.length) return []
+  if (!Array.isArray(texts)) {
+    throw new Error("Embeddings input must be an array.")
+  }
+
+  // 🔹 Clean and validate inputs
+  const cleanTexts = texts
+    .filter((t) => typeof t === "string")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+    .map((t) =>
+      t.length > MAX_INPUT_LENGTH
+        ? t.slice(0, MAX_INPUT_LENGTH)
+        : t
+    )
+
+  if (cleanTexts.length === 0) {
+    throw new Error(
+      "No valid text provided for embeddings."
+    )
+  }
 
   const allEmbeddings: number[][] = []
 
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < cleanTexts.length; i += BATCH_SIZE) {
+    const batch = cleanTexts.slice(i, i + BATCH_SIZE)
 
     const response = await openai.embeddings.create({
       model: EMBEDDING_MODEL,

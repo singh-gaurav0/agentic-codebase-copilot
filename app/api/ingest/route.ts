@@ -43,6 +43,7 @@ export async function POST(req: Request) {
 
     // 2️⃣ Clone repository
     const repoPath = await cloneGitHubRepo(githubUrl)
+    console.log("Repo path:", repoPath)
 
     // 3️⃣ Parse files
     const parsedFiles = await parseRepository(repoPath)
