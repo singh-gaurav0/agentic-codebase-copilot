@@ -33,12 +33,12 @@ export default function RepoQueryPage() {
       setError("Query cannot be empty.")
       return
     }
-
+  
     try {
       setError(null)
       setSteps([])
       setIsLoading(true)
-
+  
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -47,21 +47,21 @@ export default function RepoQueryPage() {
           query,
         }),
       })
-
+  
       const reader = res.body?.getReader()
       const decoder = new TextDecoder()
-
+  
       if (!reader) {
         throw new Error("Failed to read response")
       }
-
+  
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
+  
         const chunk = decoder.decode(value)
         const lines = chunk.split('\n')
-
+  
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = JSON.parse(line.slice(6))
@@ -121,7 +121,11 @@ export default function RepoQueryPage() {
         {steps.length > 0 && (
           <div className="space-y-3">
             {steps.map((step, index) => (
-              <AgentStepCard key={index} step={step} />
+              <AgentStepCard 
+                key={index} 
+                step={step} 
+                isLatest={index === steps.length - 1}
+              />
             ))}
           </div>
         )}
@@ -155,12 +159,18 @@ export default function RepoQueryPage() {
   )
 }
 
-function AgentStepCard({ step }: { step: AgentStep }) {
+function AgentStepCard({ step, isLatest }: { step: AgentStep; isLatest: boolean }) {
   if (step.type === 'analyzing') {
     return (
       <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
         <div className="flex items-center gap-3">
-          <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full" />
+          {isLatest ? (
+            <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full" />
+          ) : (
+            <svg className="h-4 w-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+          )}
           <span className="text-blue-300 font-medium">{step.message}</span>
         </div>
       </div>
@@ -201,7 +211,13 @@ function AgentStepCard({ step }: { step: AgentStep }) {
     return (
       <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-4">
         <div className="flex items-center gap-3">
-          <div className="animate-pulse h-3 w-3 bg-purple-400 rounded-full" />
+          {isLatest ? (
+            <div className="animate-pulse h-3 w-3 bg-purple-400 rounded-full" />
+          ) : (
+            <svg className="h-4 w-4 text-purple-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+          )}
           <span className="text-purple-300 font-medium">
             Executing: <code className="px-2 py-1 bg-purple-500/20 rounded text-sm">{step.toolName}</code>
           </span>

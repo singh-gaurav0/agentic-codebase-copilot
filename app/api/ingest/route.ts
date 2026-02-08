@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server"
 import fs from "fs/promises"
 
 import { createOrGetRepository } from "@/lib/db/repositories"
@@ -17,158 +16,190 @@ import { indexFileWithSymbols } from "@/lib/indexing/indexRepositoryV2"
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-
     const { githubUrl } = body
 
     if (!githubUrl) {
-      return NextResponse.json(
-        { success: false, error: "githubUrl is required" },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ success: false, error: "githubUrl is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
 
-    // 1️⃣ Create repository record
-    const { repository: repo, alreadyIndexed } =
-      await createOrGetRepository({
-        name: githubUrl.split("/").pop() || "repo",
-        sourceType: "github",
-        sourceUrl: githubUrl,
-      })
+    // Create streaming response
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Helper to send step updates
+          const sendStep = (type: string, message: string, details?: any) => {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type, message, details })}\n\n`)
+            )
+          }
 
-    if (alreadyIndexed) {
-      return NextResponse.json({
-        success: true,
-        repositoryId: repo.id,
-        message: "Repository already indexed.",
-      })
-    }
+          // 1️⃣ Create repository record
+          const { repository: repo, alreadyIndexed } = await createOrGetRepository({
+            name: githubUrl.split("/").pop() || "repo",
+            sourceType: "github",
+            sourceUrl: githubUrl,
+          })
 
-    // 2️⃣ Clone repository
-    const repoPath = await cloneGitHubRepo(githubUrl)
-    console.log("Repo path:", repoPath)
+          if (alreadyIndexed) {
+            sendStep('complete', 'Repository already indexed', { repositoryId: repo.id })
+            controller.close()
+            return
+          }
 
-    // 3️⃣ Parse files
-    const parsedFiles = await parseRepository(repoPath)
+          // 2️⃣ Clone repository
+          sendStep('cloning', '📥 Cloning repository...')
+          const repoPath = await cloneGitHubRepo(githubUrl)
 
-    if (parsedFiles.length === 0) {
-      await fs.rm(repoPath, { recursive: true, force: true })
+          // 3️⃣ Parse files
+          sendStep('parsing', '📂 Scanning files...')
+          const parsedFiles = await parseRepository(repoPath)
 
-      return NextResponse.json({
-        success: false,
-        message: "No valid files found",
-      })
-    }
+          if (parsedFiles.length === 0) {
+            await fs.rm(repoPath, { recursive: true, force: true })
+            sendStep('error', 'No valid files found')
+            controller.close()
+            return
+          }
 
-    // 4️⃣ Insert files into DB
-    const insertedFiles = await insertFiles(
-      parsedFiles.map((file) => ({
-        repositoryId: repo.id,
-        path: file.path,
-        language: file.language,
-        content: file.content,
-      }))
-    )
+          sendStep('parsing', `✅ Found ${parsedFiles.length} files`, {
+            filesCount: parsedFiles.length
+          })
 
-    // Map path → fileId
-    const fileIdMap = new Map(
-      insertedFiles.map((f: any) => [f.path, f.id])
-    )
+          // 4️⃣ Insert files into DB
+          const insertedFiles = await insertFiles(
+            parsedFiles.map((file) => ({
+              repositoryId: repo.id,
+              path: file.path,
+              language: file.language,
+              content: file.content,
+            }))
+          )
 
-    // ========================================
-    // V1 INDEXING (keep existing for now)
-    // ========================================
-    console.log("\n📦 Running V1 indexing (line-based chunks)...\n")
+          const fileIdMap = new Map(insertedFiles.map((f: any) => [f.path, f.id]))
 
-    const allChunks: {
-      repositoryId: string
-      fileId: string
-      content: string
-      tokenCount: number
-    }[] = []
+          // ========================================
+          // V1 INDEXING
+          // ========================================
+          sendStep('indexing_v1', '📦 Creating line-based chunks...')
 
-    for (const file of parsedFiles) {
-      const chunks = chunkContent(file.content)
+          const allChunks: {
+            repositoryId: string
+            fileId: string
+            content: string
+            tokenCount: number
+          }[] = []
 
-      for (const chunk of chunks) {
-        allChunks.push({
-          repositoryId: repo.id,
-          fileId: fileIdMap.get(file.path),
-          content: chunk.content,
-          tokenCount: chunk.tokenCount,
-        })
-      }
-    }
+          for (const file of parsedFiles) {
+            const chunks = chunkContent(file.content)
+            for (const chunk of chunks) {
+              allChunks.push({
+                repositoryId: repo.id,
+                fileId: fileIdMap.get(file.path),
+                content: chunk.content,
+                tokenCount: chunk.tokenCount,
+              })
+            }
+          }
 
-    // Generate embeddings for V1 chunks
-    const embeddings = await generateEmbeddings(
-      allChunks.map((c) => c.content)
-    )
+          sendStep('indexing_v1', `🧮 Generating embeddings for ${allChunks.length} chunks...`, {
+            chunksCount: allChunks.length
+          })
 
-    // Insert V1 chunks (these will have chunk_type='block' by default)
-    await insertChunks(
-      allChunks.map((chunk, index) => ({
-        repositoryId: chunk.repositoryId,
-        fileId: chunk.fileId,
-        content: chunk.content,
-        tokenCount: chunk.tokenCount,
-        embedding: embeddings[index],
-      }))
-    )
+          const embeddings = await generateEmbeddings(allChunks.map((c) => c.content))
 
-    console.log(`✅ V1 indexing complete: ${allChunks.length} chunks\n`)
+          await insertChunks(
+            allChunks.map((chunk, index) => ({
+              repositoryId: chunk.repositoryId,
+              fileId: chunk.fileId,
+              content: chunk.content,
+              tokenCount: chunk.tokenCount,
+              embedding: embeddings[index],
+            }))
+          )
 
-    // ========================================
-    // ✅ V2 INDEXING (symbol extraction)
-    // ========================================
-    console.log("🚀 Running V2 indexing (symbol extraction)...\n")
+          sendStep('indexing_v1', `✅ V1 indexing complete`, {
+            totalChunks: allChunks.length
+          })
 
-    let totalSymbols = 0
+          // ========================================
+          // V2 INDEXING
+          // ========================================
+          sendStep('indexing_v2', '🚀 Extracting symbols...')
 
-    // Create File objects with IDs for V2 indexing
-    const filesWithIds = parsedFiles.map(file => ({
-      id: fileIdMap.get(file.path)!,
-      repositoryId: repo.id,
-      path: file.path,
-      name: file.path.split('/').pop() || file.path,
-      content: file.content,
-      language: file.language
-    }))
+          let totalSymbols = 0
+          const filesWithIds = parsedFiles.map(file => ({
+            id: fileIdMap.get(file.path)!,
+            repositoryId: repo.id,
+            path: file.path,
+            name: file.path.split('/').pop() || file.path,
+            content: file.content,
+            language: file.language
+          }))
 
-    // Run V2 indexing (symbols + symbol-level chunks)
-    for (const file of filesWithIds) {
-      const symbolCount = await indexFileWithSymbols(repo.id, file as File)
-      totalSymbols += symbolCount
-    }
+          for (let i = 0; i < filesWithIds.length; i++) {
+            const file = filesWithIds[i]
+            
+            const symbolCount = await indexFileWithSymbols(repo.id, file as File)
+            totalSymbols += symbolCount
 
-    console.log(`✅ V2 indexing complete: ${totalSymbols} symbols\n`)
+            if ((i + 1) % 5 === 0 || i === filesWithIds.length - 1) {
+              // Send progress every 5 files or at the end
+              sendStep('indexing_v2', `🔍 Processing files (${i + 1}/${filesWithIds.length})...`, {
+                current: i + 1,
+                total: filesWithIds.length,
+                totalSymbols
+              })
+            }
+          }
 
-    // ========================================
-    // Cleanup
-    // ========================================
-    await fs.rm(repoPath, { recursive: true, force: true })
+          sendStep('indexing_v2', `✅ V2 indexing complete`, {
+            totalSymbols
+          })
 
-    return NextResponse.json({
-      success: true,
-      repositoryId: repo.id,
-      totalFiles: parsedFiles.length,
-      v1: {
-        totalChunks: allChunks.length,
-      },
-      v2: {
-        totalSymbols,
+          // Cleanup
+          await fs.rm(repoPath, { recursive: true, force: true })
+
+          // Final result
+          sendStep('complete', `✨ Indexing complete!`, {
+            repositoryId: repo.id,
+            totalFiles: parsedFiles.length,
+            totalChunks: allChunks.length,
+            totalSymbols
+          })
+
+          controller.close()
+
+        } catch (error: unknown) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              message: error instanceof Error ? error.message : 'Unknown error'
+            })}\n\n`)
+          )
+          controller.close()
+        }
       }
     })
-  } catch (error: unknown) {
-    console.error("Upload error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error",
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       },
-      { status: 500 }
+    })
+
+  } catch (error: unknown) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     )
   }
 }
