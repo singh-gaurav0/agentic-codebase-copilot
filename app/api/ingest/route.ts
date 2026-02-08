@@ -11,6 +11,9 @@ import { chunkContent } from "@/lib/ingestion/chunker"
 
 import { generateEmbeddings } from "@/lib/embeddings/embed"
 
+import { File } from '@/types/index'
+import { indexFileWithSymbols } from "@/lib/indexing/indexRepositoryV2"
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -26,20 +29,19 @@ export async function POST(req: Request) {
 
     // 1️⃣ Create repository record
     const { repository: repo, alreadyIndexed } =
-    await createOrGetRepository({
-      name: githubUrl.split("/").pop() || "repo",
-      sourceType: "github",
-      sourceUrl: githubUrl,
-    })
-  
-  if (alreadyIndexed) {
-    return NextResponse.json({
-      success: true,
-      repositoryId: repo.id,
-      message: "Repository already indexed.",
-    })
-  }
-  
+      await createOrGetRepository({
+        name: githubUrl.split("/").pop() || "repo",
+        sourceType: "github",
+        sourceUrl: githubUrl,
+      })
+
+    if (alreadyIndexed) {
+      return NextResponse.json({
+        success: true,
+        repositoryId: repo.id,
+        message: "Repository already indexed.",
+      })
+    }
 
     // 2️⃣ Clone repository
     const repoPath = await cloneGitHubRepo(githubUrl)
@@ -72,7 +74,11 @@ export async function POST(req: Request) {
       insertedFiles.map((f: any) => [f.path, f.id])
     )
 
-    // 5️⃣ Chunk all files
+    // ========================================
+    // V1 INDEXING (keep existing for now)
+    // ========================================
+    console.log("\n📦 Running V1 indexing (line-based chunks)...\n")
+
     const allChunks: {
       repositoryId: string
       fileId: string
@@ -93,12 +99,12 @@ export async function POST(req: Request) {
       }
     }
 
-    // 6️⃣ Generate embeddings
+    // Generate embeddings for V1 chunks
     const embeddings = await generateEmbeddings(
       allChunks.map((c) => c.content)
     )
 
-    // 7️⃣ Insert chunks with embeddings
+    // Insert V1 chunks (these will have chunk_type='block' by default)
     await insertChunks(
       allChunks.map((chunk, index) => ({
         repositoryId: chunk.repositoryId,
@@ -109,16 +115,51 @@ export async function POST(req: Request) {
       }))
     )
 
-    // 8️⃣ Cleanup
+    console.log(`✅ V1 indexing complete: ${allChunks.length} chunks\n`)
+
+    // ========================================
+    // ✅ V2 INDEXING (symbol extraction)
+    // ========================================
+    console.log("🚀 Running V2 indexing (symbol extraction)...\n")
+
+    let totalSymbols = 0
+
+    // Create File objects with IDs for V2 indexing
+    const filesWithIds = parsedFiles.map(file => ({
+      id: fileIdMap.get(file.path)!,
+      repositoryId: repo.id,
+      path: file.path,
+      name: file.path.split('/').pop() || file.path,
+      content: file.content,
+      language: file.language
+    }))
+
+    // Run V2 indexing (symbols + symbol-level chunks)
+    for (const file of filesWithIds) {
+      const symbolCount = await indexFileWithSymbols(repo.id, file as File)
+      totalSymbols += symbolCount
+    }
+
+    console.log(`✅ V2 indexing complete: ${totalSymbols} symbols\n`)
+
+    // ========================================
+    // Cleanup
+    // ========================================
     await fs.rm(repoPath, { recursive: true, force: true })
 
     return NextResponse.json({
       success: true,
       repositoryId: repo.id,
       totalFiles: parsedFiles.length,
-      totalChunks: allChunks.length,
+      v1: {
+        totalChunks: allChunks.length,
+      },
+      v2: {
+        totalSymbols,
+      }
     })
   } catch (error: unknown) {
+    console.error("Upload error:", error)
     return NextResponse.json(
       {
         success: false,

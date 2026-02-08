@@ -1,13 +1,11 @@
-/**
- * Core type definitions for Agentic Codebase Copilot
- */
+// src/types/index.ts (extend your existing types)
 
 export interface Repository {
   id: string
   name: string
   url: string
   uploadedAt: Date
-  // TODO: Add more repository metadata
+  sourceType?: 'github' | 'zip' // Match DB
 }
 
 export interface File {
@@ -17,34 +15,81 @@ export interface File {
   name: string
   content: string
   language: string
-  // TODO: Add file metadata (size, hash, etc.)
 }
 
+// ✅ NEW: Symbol types
+export interface Symbol {
+  id: string
+  repositoryId: string
+  fileId: string
+  name: string
+  qualifiedName?: string // "ClassName.methodName"
+  type: 'function' | 'method' | 'class' | 'interface' | 'type' | 'variable' | 'constant' | 'enum'
+  startLine: number
+  endLine: number
+  signature?: string
+  content: string
+  docstring?: string
+  isExported: boolean
+  parentSymbolId?: string
+  createdAt: Date
+}
+
+export interface SymbolReference {
+  id: string
+  symbolId: string
+  fileId: string
+  line: number
+  columnStart?: number
+  columnEnd?: number
+  referenceType: 'call' | 'import' | 'type_annotation' | 'instantiation' | 'assignment'
+  createdAt: Date
+}
+
+// ✅ ENHANCED: CodeChunk with new fields
 export interface CodeChunk {
   id: string
+  repositoryId: string // Added for completeness
   fileId: string
   content: string
   startLine: number
   endLine: number
+  tokenCount?: number
   embedding?: number[]
-  // TODO: Add embedding metadata
+  chunkType: 'symbol' | 'file' | 'block' // NEW
+  symbolId?: string // NEW - links to symbols table
+  metadata?: Record<string, unknown> // NEW
+  createdAt: Date
 }
 
+export interface FileDependency {
+  id: string
+  repositoryId: string
+  fromFileId: string
+  toFileId: string
+  importName?: string
+  importType?: 'default' | 'named' | 'namespace' | 'dynamic'
+  createdAt: Date
+}
+
+// ✅ Tool interfaces remain the same
 export interface ToolInput {
-  type: string
-  payload: Record<string, unknown>
-  // TODO: Add input validation metadata
+  repositoryId: string
+  query: string
+  entities?: QueryEntities // NEW - from intent classifier
+}
+
+export interface QueryEntities {
+  symbolName?: string
+  fileName?: string
+  filePattern?: string
+  conceptKeywords?: string[]
 }
 
 export interface ToolOutput {
   success: boolean
+  answer?: string
   data?: unknown
-  error?: string
+  message?: string
   metadata?: Record<string, unknown>
-}
-
-export interface EmbeddingResult {
-  id: string
-  vector: number[]
-  // TODO: Add embedding metadata
 }

@@ -1,77 +1,108 @@
 /**
  * Landing Page
- * Introduction and navigation to dashboard
+ * RepoMind - AI-powered codebase intelligence
  */
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
+function Logo() {
+  return (
+    <div className="flex items-center justify-center gap-3">
+      {/* Minimal network-style logo */}
+      <svg
+        width="40"
+        height="40"
+        viewBox="0 0 100 100"
+        className="text-blue-500"
+        fill="none"
+      >
+        <circle cx="20" cy="50" r="6" fill="currentColor" opacity="0.8" />
+        <circle cx="50" cy="20" r="6" fill="currentColor" opacity="0.8" />
+        <circle cx="80" cy="50" r="6" fill="currentColor" opacity="0.8" />
+        <circle cx="50" cy="80" r="6" fill="currentColor" opacity="0.8" />
+
+        <line x1="20" y1="50" x2="50" y2="20" stroke="currentColor" strokeWidth="2" opacity="0.4" />
+        <line x1="50" y1="20" x2="80" y2="50" stroke="currentColor" strokeWidth="2" opacity="0.4" />
+        <line x1="80" y1="50" x2="50" y2="80" stroke="currentColor" strokeWidth="2" opacity="0.4" />
+        <line x1="50" y1="80" x2="20" y2="50" stroke="currentColor" strokeWidth="2" opacity="0.4" />
+      </svg>
+
+      <span className="text-2xl font-semibold tracking-tight">
+        RepoMind
+      </span>
+    </div>
+  )
+}
+
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      <div className="container max-w-4xl mx-auto px-4 py-16">
-        <div className="text-center space-y-8">
-          <h1 className="text-5xl font-bold">Agentic Codebase Copilot</h1>
+    <main className="relative min-h-screen bg-[#0B0F14] text-gray-100 overflow-hidden">
 
-          <p className="text-xl text-gray-600">
-            Your intelligent AI-powered assistant for understanding, analyzing,
-            and generating code for your repositories.
+      {/* Subtle gradient layer */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#0B0F14] via-[#0B0F14] to-[#111827]" />
+
+      {/* Optional animated background component */}
+      {/* <AnimatedBackground /> */}
+
+      <div className="container max-w-5xl mx-auto px-6 py-20">
+        <div className="text-center space-y-10">
+
+          <Logo />
+
+          <h1 className="text-5xl md:text-6xl font-bold tracking-tight leading-tight">
+            Understand Your Codebase Instantly
+          </h1>
+
+          <p className="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            RepoMind indexes your repository using vector embeddings and
+            intelligent agent routing — so you can search, explain,
+            and generate tests with precision.
           </p>
 
-          <div className="space-y-4">
-            <p className="text-gray-700">
-              Upload your codebase and ask questions using AI agents:
-            </p>
-            <ul className="text-left max-w-2xl mx-auto space-y-2 text-gray-600">
-              <li>
-                <strong>Code RAG:</strong> Semantic search and question answering
-              </li>
-              <li>
-                <strong>File Search:</strong> Find files by name, path, and
-                pattern
-              </li>
-              <li>
-                <strong>Test Generator:</strong> Automatically generate unit
-                tests
-              </li>
-            </ul>
-          </div>
-
-          <div className="pt-8">
+          <div className="pt-6">
             <Link href="/dashboard">
-              <Button size="lg">
-                Get Started
+              <Button size="lg" className="px-8 py-6 text-base">
+                Launch Dashboard
               </Button>
             </Link>
           </div>
         </div>
 
         {/* Feature Overview */}
-        <div className="mt-20 grid md:grid-cols-3 gap-8">
-          {/* TODO: Add feature cards with icons */}
-          <div className="border rounded-lg p-6 text-center">
-            <h3 className="text-lg font-semibold mb-2">Upload Codebase</h3>
-            <p className="text-gray-600 text-sm">
-              Support for GitHub repositories and ZIP uploads
+        <div className="mt-24 grid md:grid-cols-3 gap-8">
+
+          <div className="bg-[#1F2937] border border-white/5 rounded-xl p-6 text-center hover:border-blue-500/40 transition">
+            <h3 className="text-lg font-semibold mb-3">
+              Semantic Code Search
+            </h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Retrieve relevant code chunks using vector similarity
+              powered by pgvector and OpenAI embeddings.
             </p>
           </div>
 
-          <div className="border rounded-lg p-6 text-center">
-            <h3 className="text-lg font-semibold mb-2">Intelligent Agents</h3>
-            <p className="text-gray-600 text-sm">
-              Specialized tools for different code analysis tasks
+          <div className="bg-[#1F2937] border border-white/5 rounded-xl p-6 text-center hover:border-blue-500/40 transition">
+            <h3 className="text-lg font-semibold mb-3">
+              Intelligent Explanation
+            </h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Ask natural language questions and get grounded,
+              repository-aware answers with similarity hardening.
             </p>
           </div>
 
-          <div className="border rounded-lg p-6 text-center">
-            <h3 className="text-lg font-semibold mb-2">Semantic Search</h3>
-            <p className="text-gray-600 text-sm">
-              Vector-based search powered by embeddings
+          <div className="bg-[#1F2937] border border-white/5 rounded-xl p-6 text-center hover:border-blue-500/40 transition">
+            <h3 className="text-lg font-semibold mb-3">
+              Automated Test Generation
+            </h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Generate unit tests using deterministic file selection
+              combined with LLM intelligence.
             </p>
           </div>
+
         </div>
-
-        {/* TODO: Add more sections (how it works, examples, etc.) */}
       </div>
     </main>
   )

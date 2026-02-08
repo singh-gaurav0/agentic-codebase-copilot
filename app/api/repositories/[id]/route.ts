@@ -2,16 +2,18 @@ import { NextResponse } from "next/server"
 import { getSupabaseClient } from "@/lib/db/client"
 
 export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
+  request: Request,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await context.params
+
     const supabase = getSupabaseClient()
 
     const { error } = await supabase
       .from("repositories")
       .delete()
-      .eq("id", params.id)
+      .eq("id", id)
 
     if (error) {
       throw new Error(error.message)

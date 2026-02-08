@@ -59,3 +59,41 @@ export async function searchSimilarChunks(params: {
 
   return data
 }
+
+
+export async function insertCodeChunks(
+  chunks: Array<{
+    repositoryId: string
+    fileId: string
+    content: string
+    embedding?: number[]
+    tokenCount?: number
+    chunkType?: 'symbol' | 'file' | 'block'
+    symbolId?: string
+    metadata?: Record<string, unknown>
+  }>
+) {
+  if (chunks.length === 0) return
+
+  const supabase = getSupabaseClient()
+
+  const { error } = await supabase
+    .from('code_chunks')
+    .insert(
+      chunks.map(chunk => ({
+        repository_id: chunk.repositoryId,
+        file_id: chunk.fileId,
+        content: chunk.content,
+        embedding: chunk.embedding || null,
+        token_count: chunk.tokenCount || Math.ceil(chunk.content.length / 4),
+        chunk_type: chunk.chunkType || 'block',
+        symbol_id: chunk.symbolId || null,
+        metadata: chunk.metadata || {}
+      }))
+    )
+
+  if (error) {
+    console.error('Error inserting chunks:', error)
+    throw error
+  }
+}

@@ -12,14 +12,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-// 🔹 Adjustable threshold
-const SIMILARITY_THRESHOLD = 0.75
+// 🔹 Calibrated thresholds
+const MIN_SIMILARITY = 0.3
+const IDEAL_SIMILARITY = 0.6
+const MAX_CONTEXT_CHUNKS = 3
 
 export class CodeRagTool implements Tool {
   name = "code-rag"
   description = "Explains code using vector retrieval"
 
   async execute(input: ToolInput): Promise<ToolOutput> {
+    if (!input.query?.trim()) {
+      return {
+        success: false,
+        message: "Query cannot be empty.",
+      }
+    }
+
     const [queryEmbedding] = await generateEmbeddings([
       input.query,
     ])
@@ -33,22 +42,31 @@ export class CodeRagTool implements Tool {
     if (!matches || matches.length === 0) {
       return {
         success: false,
-        message: "No relevant code found.",
+        message: "No code found in this repository.",
       }
     }
 
-    // 🔹 Similarity threshold filtering
-    const relevantMatches = matches.filter(
-      (m: any) => m.similarity >= SIMILARITY_THRESHOLD
+    // Sort by similarity (highest first)
+    const sortedMatches = matches.sort(
+      (a: any, b: any) => b.similarity - a.similarity
     )
 
-    if (relevantMatches.length === 0) {
+    const topMatch = sortedMatches[0]
+
+    // 🔹 Hard reject only if similarity is extremely low
+    if (topMatch.similarity < MIN_SIMILARITY) {
       return {
         success: false,
         message:
-          "No sufficiently relevant code found in this repository.",
+          "This question does not appear related to the repository.",
       }
     }
+
+    // 🔹 Select context intelligently
+    const relevantMatches =
+      topMatch.similarity >= IDEAL_SIMILARITY
+        ? sortedMatches.slice(0, MAX_CONTEXT_CHUNKS)
+        : [topMatch]
 
     const context = relevantMatches
       .map((m: any) => m.content)

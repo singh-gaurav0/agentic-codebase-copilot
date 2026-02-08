@@ -74,3 +74,19 @@ export async function findFileByName(
   return exactMatch ?? data[0]
 }
 
+export async function getAllFiles(repositoryId: string) {
+  const supabase = getSupabaseClient()
+
+  const { data, error } = await supabase
+    .from("files")
+    .select("id, path")
+    .eq("repository_id", repositoryId)
+    .order("path", { ascending: true })
+
+  if (error) {
+    throw new Error(`Failed to fetch files: ${error.message}`)
+  }
+
+  return data
+}
+

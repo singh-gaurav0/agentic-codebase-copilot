@@ -22,10 +22,16 @@ export interface AgentContext {
 export interface ToolInput {
   repositoryId: string
   query: string
+  entities?: {
+    symbolName?: string
+    fileName?: string
+    conceptKeywords?: string[]
+  }
 }
 
 export interface ToolOutput {
   success: boolean
   answer?: string | null
   message?: string
+  metadata?: Record<string, unknown> 
 }
