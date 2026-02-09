@@ -30,14 +30,15 @@ export interface QueryIntent {
 }
 
 export async function classifyIntent(query: string): Promise<QueryIntent> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You are a code query intent classifier. Analyze the user's query about a codebase and return JSON.
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are a code query intent classifier. Analyze the user's query about a codebase and return JSON.
 
 **Intent Types:**
 
@@ -77,7 +78,7 @@ export async function classifyIntent(query: string): Promise<QueryIntent> {
 - Keywords "test", "jest", "unit test" → generate_tests
 - Abstract/architectural questions → explain_concept
 
-Return JSON:
+Return JSON with this exact structure:
 {
   "intentType": "explain_symbol",
   "entities": {
@@ -87,25 +88,178 @@ Return JSON:
   },
   "reasoning": "User asked 'what does' about a specific camelCase symbol",
   "confidence": 0.95
-}`,
-      },
-      {
-        role: "user",
-        content: `Classify this query: "${query}"`,
-      },
-    ],
-  })
+}
 
-  const result = JSON.parse(response.choices[0].message.content || "{}")
+IMPORTANT: Always return valid JSON. If unsure, default to "explain_concept" with confidence 0.5.`,
+        },
+        {
+          role: "user",
+          content: `Classify this query: "${query}"`,
+        },
+      ],
+    })
 
+    const content = response.choices[0].message.content
+    
+    if (!content) {
+      throw new Error("Empty response from OpenAI")
+    }
+
+    const result = JSON.parse(content)
+
+    // Validate the response structure
+    if (!result.intentType) {
+      console.warn("Invalid intent classification response:", result)
+      return getFallbackIntent(query)
+    }
+
+    // Ensure valid intent type
+    const validIntents: IntentType[] = [
+      'list_files',
+      'explain_symbol',
+      'find_definition',
+      'explain_file',
+      'find_files',
+      'generate_tests',
+      'explain_concept'
+    ]
+
+    if (!validIntents.includes(result.intentType)) {
+      console.warn(`Invalid intent type: ${result.intentType}`)
+      return getFallbackIntent(query)
+    }
+
+    return {
+      intentType: result.intentType as IntentType,
+      entities: {
+        symbolName: result.entities?.symbolName || undefined,
+        fileName: result.entities?.fileName || undefined,
+        conceptKeywords: result.entities?.conceptKeywords || undefined,
+      },
+      reasoning: result.reasoning || "No reasoning provided",
+      confidence: typeof result.confidence === 'number' 
+        ? Math.max(0, Math.min(1, result.confidence))  // Clamp between 0-1
+        : 0.5,
+    }
+  } catch (error) {
+    console.error("Error classifying intent:", error)
+    return getFallbackIntent(query)
+  }
+}
+
+/**
+ * Fallback intent classification using simple heuristics
+ * Used when LLM classification fails
+ */
+function getFallbackIntent(query: string): QueryIntent {
+  const lowerQuery = query.toLowerCase()
+
+  // Pattern 1: List files
+  if (
+    lowerQuery.includes("list files") ||
+    lowerQuery.includes("show files") ||
+    lowerQuery === "files"
+  ) {
+    return {
+      intentType: 'list_files',
+      entities: {},
+      reasoning: "Fallback: Keywords matched 'list files'",
+      confidence: 0.7
+    }
+  }
+
+  // Pattern 2: Generate tests
+  if (
+    lowerQuery.includes("test") ||
+    lowerQuery.includes("jest") ||
+    lowerQuery.includes("unit test")
+  ) {
+    // Try to extract filename
+    const fileMatch = query.match(/(\w+\.(ts|tsx|js|jsx|py|go|java))/i)
+    
+    return {
+      intentType: 'generate_tests',
+      entities: {
+        fileName: fileMatch ? fileMatch[1] : undefined
+      },
+      reasoning: "Fallback: Keywords matched 'test'",
+      confidence: 0.7
+    }
+  }
+
+  // Pattern 3: Explain file (has file extension)
+  const fileExtMatch = query.match(/(\w+\.(ts|tsx|js|jsx|py|go|java))/i)
+  if (fileExtMatch) {
+    return {
+      intentType: 'explain_file',
+      entities: {
+        fileName: fileExtMatch[1]
+      },
+      reasoning: "Fallback: Query contains filename with extension",
+      confidence: 0.7
+    }
+  }
+
+  // Pattern 4: Find definition
+  if (
+    lowerQuery.includes("where is") ||
+    lowerQuery.includes("find definition") ||
+    lowerQuery.includes("locate")
+  ) {
+    // Try to extract symbol name (camelCase or PascalCase)
+    const symbolMatch = query.match(/\b([a-z]+[A-Z]\w+|[A-Z][a-z]+[A-Z]\w+)\b/)
+    
+    return {
+      intentType: 'find_definition',
+      entities: {
+        symbolName: symbolMatch ? symbolMatch[1] : undefined
+      },
+      reasoning: "Fallback: Keywords matched 'where is/locate'",
+      confidence: 0.6
+    }
+  }
+
+  // Pattern 5: Explain symbol (camelCase/PascalCase word present)
+  const symbolMatch = query.match(/\b([a-z]+[A-Z]\w+|[A-Z][a-z]+[A-Z]\w+)\b/)
+  if (
+    symbolMatch &&
+    (lowerQuery.includes("explain") ||
+     lowerQuery.includes("what does") ||
+     lowerQuery.includes("how does"))
+  ) {
+    return {
+      intentType: 'explain_symbol',
+      entities: {
+        symbolName: symbolMatch[1]
+      },
+      reasoning: "Fallback: Query has 'explain' + camelCase symbol",
+      confidence: 0.6
+    }
+  }
+
+  // Pattern 6: Find files
+  if (
+    lowerQuery.includes("find files") ||
+    lowerQuery.includes("which files") ||
+    lowerQuery.includes("show me files")
+  ) {
+    return {
+      intentType: 'find_files',
+      entities: {
+        conceptKeywords: [query.replace(/find files|which files|show me files/gi, '').trim()]
+      },
+      reasoning: "Fallback: Keywords matched 'find files'",
+      confidence: 0.6
+    }
+  }
+
+  // Default: Explain concept (semantic RAG)
   return {
-    intentType: result.intentType,
+    intentType: 'explain_concept',
     entities: {
-      symbolName: result.entities?.symbolName || undefined,
-      fileName: result.entities?.fileName || undefined,
-      conceptKeywords: result.entities?.conceptKeywords || undefined,
+      conceptKeywords: query.split(/\s+/).filter(word => word.length > 3)
     },
-    reasoning: result.reasoning || "No reasoning provided",
-    confidence: result.confidence || 0.5,
+    reasoning: "Fallback: No specific pattern matched, using semantic search",
+    confidence: 0.5
   }
 }

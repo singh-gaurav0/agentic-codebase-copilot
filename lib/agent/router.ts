@@ -6,6 +6,7 @@ import { ListFilesTool } from "../tools/ListFilesTool"
 import { FileExplainTool } from "../tools/FileExplainTool"
 import { SymbolExplainTool } from "../tools/symbolExplain.tool"
 import { classifyIntent } from "./intentClassifier"
+import { RepoSummaryTool } from "../tools/repoSummary.tool"
 
 const toolRegistry: Record<string, Tool> = {
   "code-rag": new CodeRagTool(),
@@ -14,6 +15,7 @@ const toolRegistry: Record<string, Tool> = {
   "list-files": new ListFilesTool(),
   "file-explain": new FileExplainTool(),
   "symbol-explain": new SymbolExplainTool(),
+  "repo-summary": new RepoSummaryTool(),
 }
 
 export async function routeToTool(query: string): Promise<{
@@ -38,6 +40,7 @@ export async function routeToTool(query: string): Promise<{
     'find_files': 'file-search',
     'generate_tests': 'test-generator',
     'explain_concept': 'code-rag', // Semantic RAG for high-level questions
+    'summarize_repo': 'repo-summary',
   }
 
   const toolKey = toolMap[intent.intentType] || 'code-rag'
