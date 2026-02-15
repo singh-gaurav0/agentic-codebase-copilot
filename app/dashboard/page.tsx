@@ -173,7 +173,7 @@ export default function DashboardPage() {
             Index New Repository
           </h2>
 
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
             <input
               type="text"
               placeholder="https://github.com/user/repository"
@@ -182,9 +182,14 @@ export default function DashboardPage() {
               className="flex-1 bg-[#111827] border border-white/10 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isIngesting}
             />
-            <Button onClick={handleIngest} disabled={isIngesting}>
-              {isIngesting ? "Indexing..." : "Index Repository"}
-            </Button>
+            <Button 
+  onClick={handleIngest} 
+  disabled={isIngesting}
+  className="w-full sm:w-auto"
+>
+  {isIngesting ? "Indexing..." : "Index Repository"}
+</Button>
+
           </div>
 
           {/* Ingestion Progress */}
